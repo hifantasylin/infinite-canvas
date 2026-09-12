@@ -138,7 +138,12 @@ async function loadLocalPlugins() {
                     description: plugin.description,
                     url,
                     source,
-                    enabled: existing?.enabled ?? false, // Preserve the user setting; new discoveries default to disabled.
+                    // Roubaai fork: a plugin shipped with the host (the local
+                    // manifest) is part of the product, so it arrives enabled —
+                    // "open the canvas and it is there" instead of "find the
+                    // plugin manager and flip a switch first". A user who turns
+                    // one off keeps that choice, since the stored record wins.
+                    enabled: existing?.enabled ?? true,
                     local: true,
                 });
             } catch (error) {

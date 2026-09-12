@@ -426,16 +426,61 @@ export function resolveModelChannel(config: AiConfig, value: string) {
 
 export function resolveModelRequestConfig(config: AiConfig, value: string) {
     const channel = resolveModelChannel(config, value);
+    const host = roubaHostConfig();
     return {
         ...config,
         model: modelOptionName(value || config.model),
-        baseUrl: channel.baseUrl,
-        apiKey: channel.apiKey,
-        apiFormat: channel.apiFormat,
+        // Roubaai fork: served by the harness, generation goes to that host's
+        // same-origin facade, so what the user typed in the canvas can never
+        // override where the request goes or which credential it carries.
+        baseUrl: host?.baseUrl ?? channel.baseUrl,
+        apiKey: host?.apiKey ?? channel.apiKey,
+        apiFormat: host?.apiFormat ?? channel.apiFormat,
+    };
+}
+
+/**
+ * Roubaai fork: the generation backend the harness announced, if any.
+ *
+ * The host serves `config.js` and states where generation goes
+ * (`window.__ROUBA_HOST__.openaiBasePath`), which keeps the harness Settings page
+ * the single place a backend is configured: the browser holds no provider key,
+ * and the canvas is never asked to enter one.
+ * @returns the base URL to use plus the placeholder credential the facade
+ *   ignores, or null when this page is not served by a harness host.
+ */
+export function roubaHostConfig(): { baseUrl: string; apiKey: string; apiFormat: ApiCallFormat; label: string } | null {
+    if (typeof window === "undefined") return null;
+    const host = (window as { __ROUBA_HOST__?: { openaiBasePath?: string; label?: string } }).__ROUBA_HOST__;
+    const path = host?.openaiBasePath;
+    if (typeof path !== "string" || !path.trim()) return null;
+    const baseUrl = new URL(path.trim(), window.location.origin).toString().replace(/\/+$/, "");
+    return {
+        baseUrl,
+        // A placeholder, not a credential: the facade is same-origin and ignores
+        // it, and the real key never leaves the host process.
+        apiKey: "host",
+        apiFormat: "openai",
+        label: typeof host?.label === "string" && host.label.trim() ? host.label.trim() : "Host",
     };
 }
 
 function normalizeChannels(config: AiConfig) {
+    // Roubaai fork: a hosted canvas has exactly one backend — the host — and its
+    // catalogue is asked of that host, so nothing is configured here.
+    const host = roubaHostConfig();
+    if (host) {
+        return [
+            createModelChannel({
+                id: "roubaai-host",
+                name: host.label,
+                baseUrl: host.baseUrl,
+                apiKey: host.apiKey,
+                apiFormat: host.apiFormat,
+                models: [],
+            }),
+        ];
+    }
     const persistedChannels = Array.isArray(config.channels) ? config.channels : [];
     const channels = persistedChannels.map((channel, index) =>
         createModelChannel({
