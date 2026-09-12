@@ -115,14 +115,21 @@ export async function ensurePluginsLoaded() {
 // Discover local plugins from web/public/plugins, add them disabled, and expose them in the manager without a URL.
 // Refresh metadata and source for existing records while preserving the enabled flag so persisted versions stay current.
 async function loadLocalPlugins() {
-    let urls: unknown;
     try {
-        const response = await fetch("/plugins/index.json");
+        // Roubaai fork: the manifest sits next to the app, so it has to follow the
+        // build's base path. A hardcoded `/plugins/index.json` asks the origin root,
+        // which is not where a host that mounts the canvas under a prefix publishes
+        // it — and the failure is silent: no local plugin is discovered at all.
+        const manifestUrl = `${import.meta.env.BASE_URL}plugins/index.json`.replace(/([^:]\/)\/+/g, "$1");
+        const response = await fetch(manifestUrl);
         if (!response.ok) return;
-        urls = await response.json();
+        return await loadManifest(await response.json());
     } catch {
         return; // Skip when no local manifest exists, such as production builds without plugins.
     }
+}
+
+async function loadManifest(urls: unknown): Promise<void> {
     if (!Array.isArray(urls) || !urls.length) return;
     const store = usePluginStore.getState();
     await Promise.all(
