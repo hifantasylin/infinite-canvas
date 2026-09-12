@@ -44,6 +44,7 @@ import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import { blueprintOps, fetchBlueprint, newestBlueprint } from "@/lib/canvas/blueprint";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
 import { buildNodeMentionReferences, getGroupResourceNodes, isCanvasReferenceNode, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -799,6 +800,27 @@ function InfiniteCanvasPage() {
         setDialogNodeId,
         applyAgentOps,
     });
+    // Roubaai fork: an empty canvas fills itself with the plan the host produced.
+    // `?bp=<project>` names one explicitly (a link that is already laid out); with
+    // no name the newest blueprint wins, because that is the work at hand. An
+    // existing canvas is never overwritten: opening one to look at it must not
+    // rewrite it.
+    const blueprintAppliedRef = useRef(false);
+    useEffect(() => {
+        if (!projectLoaded || blueprintAppliedRef.current) return;
+        blueprintAppliedRef.current = true;
+        if (nodesRef.current.length > 0) return;
+        const named = searchParams.get("bp");
+        void (async () => {
+            const project = named ?? (await newestBlueprint())?.project ?? null;
+            if (!project) return;
+            const blueprint = await fetchBlueprint(project);
+            if (!blueprint) return;
+            const ops = blueprintOps(blueprint, { x: 0, y: 0 });
+            if (ops.length > 0) applyAgentOps(ops);
+        })();
+    }, [applyAgentOps, projectLoaded, searchParams]);
+
     const createNode = useCallback(
         (type: CanvasNodeTypeId, position?: Position) => {
             const targetPosition = position || getCanvasCenter();
