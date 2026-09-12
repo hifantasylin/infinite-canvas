@@ -45,6 +45,7 @@ import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { blueprintOps, fetchBlueprint, newestBlueprint } from "@/lib/canvas/blueprint";
+import { applyCanvasAgentOps } from "@/lib/canvas/canvas-agent-ops";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
 import { buildNodeMentionReferences, getGroupResourceNodes, isCanvasReferenceNode, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -424,10 +425,42 @@ function InfiniteCanvasPage() {
         [modal, stopGenerationByRunningId, t],
     );
 
+    // Roubaai fork: a link that names a blueprint opens a canvas even when this
+    // browser has never held that project — the host produced a plan, so the page
+    // it hands out should land on that plan instead of on the project list. The
+    // plan is written into the project *as it is created*, so the first render
+    // already has the nodes and lines; applying them after load raced the load
+    // path and lost. Any other unknown id still redirects.
+    const createFromBlueprintParam = useCallback(() => {
+        const blueprintProject = new URLSearchParams(window.location.search).get("bp");
+        if (!blueprintProject) return null;
+        const id = createProject(blueprintProject);
+        // The project opens immediately and is seeded when the plan arrives; a
+        // failure here leaves an ordinary empty canvas, never a broken page.
+        void (async () => {
+            try {
+                const blueprint = await fetchBlueprint(blueprintProject);
+                if (!blueprint) return;
+                const ops = blueprintOps(blueprint, { x: 0, y: 0 });
+                if (ops.length === 0) return;
+                const seeded = applyCanvasAgentOps(
+                    { projectId: id, title: blueprintProject, nodes: [], connections: [], selectedNodeIds: [], viewport: { x: 0, y: 0, k: 1 } },
+                    ops,
+                );
+                updateProject(id, { nodes: seeded.nodes, connections: seeded.connections });
+            } catch (error) {
+                console.warn("[blueprint] seeding failed", error);
+            }
+        })();
+        const opened = openProject(id);
+        if (opened) navigate(`/canvas/${id}?bp=${encodeURIComponent(blueprintProject)}`, { replace: true });
+        return opened;
+    }, [createProject, navigate, openProject, updateProject]);
+
     useEffect(() => {
         if (!hydrated) return;
         setProjectLoaded(false);
-        const project = openProject(projectId);
+        const project = openProject(projectId) ?? createFromBlueprintParam();
         if (!project) {
             navigate("/canvas", { replace: true });
             return;
@@ -800,19 +833,18 @@ function InfiniteCanvasPage() {
         setDialogNodeId,
         applyAgentOps,
     });
-    // Roubaai fork: an empty canvas fills itself with the plan the host produced.
-    // `?bp=<project>` names one explicitly (a link that is already laid out); with
-    // no name the newest blueprint wins, because that is the work at hand. An
-    // existing canvas is never overwritten: opening one to look at it must not
-    // rewrite it.
+    // Roubaai fork: an existing empty canvas fills itself with the plan the host
+    // produced. A canvas that already has nodes is never touched — opening one to
+    // look at it must not rewrite it. The `?bp=` link is handled at project
+    // creation instead (see createFromBlueprintParam), because seeding the project
+    // before it opens avoids racing the load path.
     const blueprintAppliedRef = useRef(false);
     useEffect(() => {
         if (!projectLoaded || blueprintAppliedRef.current) return;
         blueprintAppliedRef.current = true;
-        if (nodesRef.current.length > 0) return;
-        const named = searchParams.get("bp");
+        if (nodesRef.current.length > 0 || searchParams.get("bp")) return;
         void (async () => {
-            const project = named ?? (await newestBlueprint())?.project ?? null;
+            const project = (await newestBlueprint())?.project ?? null;
             if (!project) return;
             const blueprint = await fetchBlueprint(project);
             if (!blueprint) return;
