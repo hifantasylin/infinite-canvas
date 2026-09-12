@@ -43,7 +43,7 @@ import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/a
 import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useAgentStore } from "@/stores/use-agent-store";
-import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import { useCanvasStore, type CanvasProject } from "@/stores/canvas/use-canvas-store";
 import { blueprintOps, fetchBlueprint, newestBlueprint } from "@/lib/canvas/blueprint";
 import { applyCanvasAgentOps } from "@/lib/canvas/canvas-agent-ops";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
@@ -431,27 +431,30 @@ function InfiniteCanvasPage() {
     // plan is written into the project *as it is created*, so the first render
     // already has the nodes and lines; applying them after load raced the load
     // path and lost. Any other unknown id still redirects.
-    const createFromBlueprintParam = useCallback(() => {
+    const createFromBlueprintParam = useCallback(async () => {
         const blueprintProject = new URLSearchParams(window.location.search).get("bp");
         if (!blueprintProject) return null;
         const id = createProject(blueprintProject);
-        // The project opens immediately and is seeded when the plan arrives; a
-        // failure here leaves an ordinary empty canvas, never a broken page.
-        void (async () => {
-            try {
-                const blueprint = await fetchBlueprint(blueprintProject);
-                if (!blueprint) return;
+        // The plan is read BEFORE the project is handed to the page: the page
+        // restores a project once and then saves its own nodes back, so a seed
+        // that arrived after the first render was invisible and then overwritten
+        // by the empty canvas. A failure here leaves an ordinary empty canvas,
+        // never a broken page.
+        try {
+            const blueprint = await fetchBlueprint(blueprintProject);
+            if (blueprint) {
                 const ops = blueprintOps(blueprint, { x: 0, y: 0 });
-                if (ops.length === 0) return;
-                const seeded = applyCanvasAgentOps(
-                    { projectId: id, title: blueprintProject, nodes: [], connections: [], selectedNodeIds: [], viewport: { x: 0, y: 0, k: 1 } },
-                    ops,
-                );
-                updateProject(id, { nodes: seeded.nodes, connections: seeded.connections });
-            } catch (error) {
-                console.warn("[blueprint] seeding failed", error);
+                if (ops.length > 0) {
+                    const seeded = applyCanvasAgentOps(
+                        { projectId: id, title: blueprintProject, nodes: [], connections: [], selectedNodeIds: [], viewport: { x: 0, y: 0, k: 1 } },
+                        ops,
+                    );
+                    updateProject(id, { nodes: seeded.nodes, connections: seeded.connections });
+                }
             }
-        })();
+        } catch (error) {
+            console.warn("[blueprint] seeding failed", error);
+        }
         const opened = openProject(id);
         if (opened) navigate(`/canvas/${id}?bp=${encodeURIComponent(blueprintProject)}`, { replace: true });
         return opened;
@@ -460,13 +463,10 @@ function InfiniteCanvasPage() {
     useEffect(() => {
         if (!hydrated) return;
         setProjectLoaded(false);
-        const project = openProject(projectId) ?? createFromBlueprintParam();
-        if (!project) {
-            navigate("/canvas", { replace: true });
-            return;
-        }
-
-        const restore = async () => {
+        // A `?bp=` project is created and seeded before it reaches this effect, so
+        // the restore below already reads the plan instead of an empty canvas.
+        let cancelled = false;
+        const restore = async (project: CanvasProject) => {
             const restoredNodes = await hydrateCanvasImages(resetInterruptedGeneration(project.nodes));
             const restoredSessions = await hydrateAssistantImages(project.chatSessions || []);
             setNodes(restoredNodes);
@@ -492,8 +492,19 @@ function InfiniteCanvasPage() {
             setHistoryState({ canUndo: false, canRedo: false });
             setProjectLoaded(true);
         };
-        void restore();
-    }, [hydrated, navigate, openProject, projectId]);
+        void (async () => {
+            const project = openProject(projectId) ?? (await createFromBlueprintParam());
+            if (cancelled) return;
+            if (!project) {
+                navigate("/canvas", { replace: true });
+                return;
+            }
+            await restore(project);
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [createFromBlueprintParam, hydrated, navigate, openProject, projectId]);
 
     useEffect(() => {
         if (!projectLoaded) return;
