@@ -4,6 +4,9 @@ import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
+// Roubaai fork: the image defaults below are stated with the same helper the
+// settings panel uses, so "2K · 1:1" cannot drift from the picker's own values.
+import { computeMediaSize } from "@/lib/media-size";
 
 export type ApiCallFormat = "openai" | "gemini";
 export type ModelCapability = "image" | "video" | "text" | "audio";
@@ -114,11 +117,14 @@ export const defaultConfig: AiConfig = {
     systemPrompt: "",
     reasoningEffort: "auto",
     models: ["default::gpt-image-2", "default::grok-imagine-video", "default::gpt-5.5", "default::gpt-4o-mini-tts"],
-    quality: "auto",
-    size: "1:1",
+    quality: "low",
+    // Roubaai fork defaults: one image per run, 2K, low quality. The hosting
+    // deployment bills per generation and its tiers are the backend's own, so the
+    // cheap-but-usable combination is what a fresh profile should start on.
+    size: computeMediaSize("2k", "1:1"),
     background: "",
     count: "1",
-    canvasImageCount: "3",
+    canvasImageCount: "1",
     proxyEnabled: false,
     proxyUrl: DEFAULT_LOCAL_PROXY_URL,
 };
