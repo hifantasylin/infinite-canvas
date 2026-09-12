@@ -465,6 +465,72 @@ export function roubaHostConfig(): { baseUrl: string; apiKey: string; apiFormat:
     };
 }
 
+/** Roubaai fork: the single channel a hosted canvas runs on. */
+export const HOST_CHANNEL_ID = "roubaai-host";
+
+/**
+ * Roubaai fork: fill the host channel from the catalogue the host serves.
+ *
+ * Without this the canvas shows a host channel with no models and asks the user
+ * to fetch them — which is the manual step this fork exists to remove. Called
+ * once when the app mounts; a failure leaves the channel untouched (an empty
+ * catalogue is a state the UI already handles) rather than breaking the page.
+ * @returns the number of models the host reported, for diagnostics.
+ */
+export async function loadHostCatalogue(): Promise<number> {
+    const host = roubaHostConfig();
+    if (!host) return 0;
+    try {
+        const response = await fetch(`${host.baseUrl}/models`, { headers: { accept: "application/json" } });
+        if (!response.ok) return 0;
+        const payload = (await response.json()) as { data?: Array<{ id?: string; capability?: string }> };
+        const models = (payload.data ?? [])
+            .map((entry) => ({
+                name: typeof entry.id === "string" ? entry.id.trim() : "",
+                capability: hostCapability(entry.capability, entry.id),
+            }))
+            .filter((model) => model.name !== "");
+        if (!models.length) return 0;
+        const state = useConfigStore.getState();
+        // Authoritative, not additive: the store's persisted config is rehydrated
+        // asynchronously, so at mount it may still hold whatever the previous
+        // shape was. A hosted canvas has exactly one channel, and this is it.
+        const channels = [
+            createModelChannel({
+                ...(state.config.channels.find((channel) => channel.id === HOST_CHANNEL_ID) ?? {}),
+                id: HOST_CHANNEL_ID,
+                name: host.label,
+                baseUrl: host.baseUrl,
+                apiKey: host.apiKey,
+                apiFormat: host.apiFormat,
+                models,
+            }),
+        ];
+        state.updateConfig("channels", channels);
+        state.updateConfig("models", modelOptionsFromChannels(channels));
+        // Point each capability's default at the catalogue, so a workbench opened
+        // right after this call already has a model selected.
+        const firstOf = (capability: ModelCapability) => models.find((model) => model.capability === capability)?.name;
+        const image = firstOf("image");
+        const video = firstOf("video");
+        const text = firstOf("text");
+        const audio = firstOf("audio");
+        if (image) state.updateConfig("imageModel", normalizeModelOptionValue(image, channels));
+        if (video) state.updateConfig("videoModel", normalizeModelOptionValue(video, channels));
+        if (text) state.updateConfig("textModel", normalizeModelOptionValue(text, channels));
+        if (audio) state.updateConfig("audioModel", normalizeModelOptionValue(audio, channels));
+        return models.length;
+    } catch {
+        return 0;
+    }
+}
+
+/** The host's own capability word when it sent a usable one, else the name guess. */
+function hostCapability(value: string | undefined, name: string | undefined): ModelCapability {
+    if (value === "image" || value === "video" || value === "audio" || value === "text") return value;
+    return guessCapability(name ?? "");
+}
+
 function normalizeChannels(config: AiConfig) {
     // Roubaai fork: a hosted canvas has exactly one backend — the host — and its
     // catalogue is asked of that host, so nothing is configured here.
@@ -472,7 +538,7 @@ function normalizeChannels(config: AiConfig) {
     if (host) {
         return [
             createModelChannel({
-                id: "roubaai-host",
+                id: HOST_CHANNEL_ID,
                 name: host.label,
                 baseUrl: host.baseUrl,
                 apiKey: host.apiKey,
