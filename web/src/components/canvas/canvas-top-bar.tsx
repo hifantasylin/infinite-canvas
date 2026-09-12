@@ -7,6 +7,7 @@ import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { roubaHostConfig } from "@/stores/use-config-store";
 import { DOCS_URL } from "@/constant/env";
 
 export function CanvasTopBar({
@@ -55,6 +56,10 @@ export function CanvasTopBar({
     onToggleAgent: () => void;
 }) {
     const colorTheme = useThemeStore((state) => state.theme);
+    // Roubaai fork: a hosted canvas generates through its host, not through a
+    // second local agent process, so the Agent affordances are not shown at all —
+    // an "Agent 未连接" badge nobody can act on is noise.
+    const hosted = roubaHostConfig() !== null;
     const { t } = useTranslation();
     const theme = canvasThemes[colorTheme];
     const titleRef = useRef<HTMLDivElement>(null);
@@ -135,21 +140,23 @@ export function CanvasTopBar({
                             </button>
                         )}
                     </div>
-                    <CompactAgentStatus status={compactAgentStatus} onClick={onToggleAgent} />
+                    {hosted ? null : <CompactAgentStatus status={compactAgentStatus} onClick={onToggleAgent} />}
                 </div>
 
                 <div className="pointer-events-auto flex items-center gap-1.5">
                     <UserStatusActions variant="canvas" onOpenShortcuts={() => setShortcutsOpen(true)} onOpenPlugins={onOpenPlugins} />
                     <span className="h-6 w-px" style={{ background: theme.toolbar.border }} />
-                    <Button
-                        type="text"
-                        className="!h-10 !rounded-xl !px-3 !font-medium"
-                        style={{ background: agentOpen ? theme.toolbar.activeBg : theme.toolbar.panel, color: theme.node.text, boxShadow: "0 10px 30px rgba(28,25,23,.10)" }}
-                        icon={<Bot className="size-4" />}
-                        onClick={onToggleAgent}
-                    >
-                        Agent
-                    </Button>
+                    {hosted ? null : (
+                        <Button
+                            type="text"
+                            className="!h-10 !rounded-xl !px-3 !font-medium"
+                            style={{ background: agentOpen ? theme.toolbar.activeBg : theme.toolbar.panel, color: theme.node.text, boxShadow: "0 10px 30px rgba(28,25,23,.10)" }}
+                            icon={<Bot className="size-4" />}
+                            onClick={onToggleAgent}
+                        >
+                            Agent
+                        </Button>
+                    )}
                 </div>
             </div>
             <Modal title={t("canvas.shortcuts")} open={shortcutsOpen} onCancel={() => setShortcutsOpen(false)} footer={null} centered>
