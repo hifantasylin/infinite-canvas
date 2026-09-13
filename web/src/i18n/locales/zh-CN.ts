@@ -359,6 +359,7 @@ export default {
         closeAgent: "收起 Agent",
         plugins: "节点插件",
         docs: "文档",
+        refresh: "刷新画布",
         switchLanguage: "切换到 {{language}}",
         shortcuts: "快捷键",
         lightTheme: "切换到浅色主题",

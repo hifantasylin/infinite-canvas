@@ -359,6 +359,7 @@ export default {
         closeAgent: "Close Agent",
         plugins: "Node plugins",
         docs: "Documentation",
+        refresh: "Reload the canvas",
         switchLanguage: "Switch to {{language}}",
         shortcuts: "Keyboard shortcuts",
         lightTheme: "Switch to light theme",

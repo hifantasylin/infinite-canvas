@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { Tooltip } from "antd";
-import { BookOpen, Keyboard, Puzzle, Settings2 } from "lucide-react";
+import { BookOpen, Keyboard, Puzzle, RefreshCw, Settings2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
@@ -19,6 +19,22 @@ type UserStatusActionsProps = {
     onOpenShortcuts?: () => void;
     onOpenPlugins?: () => void;
 };
+
+/**
+ * Reload the canvas from the network.
+ *
+ * A plain `location.reload()` may be answered out of the browser's cache, and a
+ * hosted canvas lives in a panel the user cannot reload by hand — closing and
+ * reopening that panel was the only way to pick up a rebuilt frontend or a
+ * changed asset tree. The timestamp makes the document a URL the browser has not
+ * seen, and with it the hashed bundle the document names; replacing rather than
+ * pushing keeps the marker out of history.
+ */
+export function reloadCanvas(): void {
+    const url = new URL(window.location.href);
+    url.searchParams.set("_r", String(Date.now()));
+    window.location.replace(url.toString());
+}
 
 export function UserStatusActions({ showConfig = true, variant = "default", onOpenShortcuts, onOpenPlugins }: UserStatusActionsProps) {
     const { i18n, t } = useTranslation();
@@ -51,6 +67,11 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                     <BookOpen className="size-4" />
                 </a>
             )}
+            <Tooltip title={t("topNav.refresh")} mouseEnterDelay={0.2}>
+                <button type="button" className={naturalIconClass} style={iconStyle} onClick={reloadCanvas} aria-label={t("topNav.refresh")} title={t("topNav.refresh")}>
+                    <RefreshCw className="size-4" />
+                </button>
+            </Tooltip>
             {showConfig ? (
                 <button type="button" className={naturalIconClass} style={iconStyle} onClick={() => openConfigDialog(false)} aria-label={t("navigation.config")} title={t("navigation.config")}>
                     <Settings2 className="size-4" />
