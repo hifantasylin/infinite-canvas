@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { App, Button, Empty, Input, Modal, Select, Spin } from "antd";
-import { Check, Download, FileText, Film, Image as ImageIcon, Music, Plus, Search, Upload } from "lucide-react";
+import { Check, Download, FileText, Film, FolderInput, Image as ImageIcon, Music, Pencil, Plus, Search, Trash2, Upload } from "lucide-react";
 import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
@@ -69,6 +69,45 @@ const KIND_ICON = { image: ImageIcon, video: Film, audio: Music, other: FileText
 /** The same-origin URL that serves one asset's bytes, from the tree it lives in. */
 function fileUrl(root: string, path: string): string {
     return withHostSession(`${ROUTE}/file?root=${encodeURIComponent(root)}&path=${encodeURIComponent(path)}`);
+}
+
+/** One of a project's bookkeeping files as text, or "" when it is not there. */
+async function readText(root: string, path: string): Promise<string> {
+    try {
+        const response = await fetch(fileUrl(root, path));
+        return response.ok ? await response.text() : "";
+    } catch {
+        return "";
+    }
+}
+
+/** What landing recorded about one asset, read back out of its project index. */type IndexRow = { category: string; url: string; at: string };
+
+/** The index row whose asset name is this file's, if it has one. */
+function indexedRow(index: string, name: string): IndexRow | undefined {
+    const line = index.split("\n").find((row) => row.startsWith("|") && row.includes(`| ${name} |`));
+    if (line === undefined) return undefined;
+    // | 类别 | 资产名 | 路径 | 原始URL | 时间 |
+    const cells = line.split("|").map((cell) => cell.trim());
+    return { category: cells[1] ?? "", url: (cells[4] ?? "").replaceAll("`", ""), at: cells[5] ?? "" };
+}
+
+/** Cost ledger rows this asset's name points at, matched by run label. */
+function relatedCost(ledger: string, stem: string): { count: number; cost: number } {
+    let count = 0;
+    let cost = 0;
+    for (const line of ledger.split("\n")) {
+        if (line.trim() === "") continue;
+        try {
+            const entry = JSON.parse(line) as { label?: string; costUsd?: number };
+            if (entry.label === undefined || !stem.includes(entry.label)) continue;
+            count += 1;
+            cost += entry.costUsd ?? 0;
+        } catch {
+            // A half-written line is not this asset's problem.
+        }
+    }
+    return { count, cost };
 }
 
 export default function AssetsPage() {
@@ -259,6 +298,103 @@ export default function AssetsPage() {
         }
     }, [files, message, selected, t]);
 
+    /** One write against the browsed tree: move, rename or delete. */
+    const edit = useCallback(async (route: string, body: Record<string, unknown>): Promise<void> => {
+        const response = await fetch(withHostSession(`${ROUTE}${route}?root=${encodeURIComponent(rootId)}`), {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(body),
+        });
+        const answer = (await response.json()) as { ok?: boolean; error?: string };
+        if (!response.ok || answer.ok !== true) throw new Error(answer.error ?? `HTTP ${response.status}`);
+    }, [rootId]);
+
+    /** Ask for one value, returning undefined when the dialog is dismissed. */
+    const ask = useCallback((title: string, initial: string, okText: string): Promise<string | undefined> => {
+        let value = initial;
+        return new Promise((resolve) => {
+            modal.confirm({
+                title,
+                content: <Input defaultValue={initial} onChange={(event) => { value = event.target.value; }} />,
+                okText,
+                cancelText: t("common.cancel"),
+                onOk: () => { resolve(value.trim()); },
+                onCancel: () => { resolve(undefined); },
+            });
+        });
+    }, [modal, t]);
+
+    /** Run one write over every selected asset, then reload the library. */
+    const applyToSelection = useCallback(async (
+        run: (file: AssetFile) => Promise<void>,
+        done: (count: number) => string,
+        failed: string,
+    ): Promise<void> => {
+        const chosen = files.filter((file) => selected.has(fileKey(file)));
+        if (chosen.length === 0) return;
+        setBusy(true);
+        try {
+            for (const file of chosen) await run(file);
+            message.success(done(chosen.length));
+            setSelected(new Set<string>());
+            await load();
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : failed);
+        } finally {
+            setBusy(false);
+        }
+    }, [files, load, message, selected]);
+
+    const moveSelected = useCallback(async () => {
+        const first = files.find((file) => selected.has(fileKey(file)));
+        if (first === undefined) return;
+        const target = await ask(t("assets.moveTitle"), first.project, t("assets.move"));
+        if (target === undefined || target === "") return;
+        await applyToSelection(
+            // Each asset keeps its place below the project: moving a file out of
+            // 01_角色 lands it in the target's 01_角色, not at its root.
+            (file) => edit("/move", { from: file.path, to: `${target}/${file.path.slice(file.project.length + 1)}` }),
+            (count) => t("assets.moved", { count }),
+            t("assets.moveFailed"),
+        );
+    }, [applyToSelection, ask, edit, files, selected, t]);
+
+    const removeSelected = useCallback(async () => {
+        const confirmed = await new Promise<boolean>((resolve) => {
+            modal.confirm({
+                title: t("assets.removeTitle", { count: selected.size }),
+                content: t("assets.removeHint"),
+                okText: t("assets.remove"),
+                okButtonProps: { danger: true },
+                cancelText: t("common.cancel"),
+                onOk: () => { resolve(true); },
+                onCancel: () => { resolve(false); },
+            });
+        });
+        if (!confirmed) return;
+        await applyToSelection(
+            (file) => edit("/delete", { path: file.path }),
+            (count) => t("assets.removed", { count }),
+            t("assets.removeFailed"),
+        );
+    }, [applyToSelection, edit, modal, selected.size, t]);
+
+    const renameAsset = useCallback(async (file: AssetFile) => {
+        const name = await ask(t("assets.renameTitle"), file.name, t("assets.rename"));
+        if (name === undefined || name === "" || name === file.name) return;
+        setBusy(true);
+        try {
+            await edit("/rename", { path: file.path, name });
+            message.success(t("assets.renamed"));
+            setPreview(null);
+            await load();
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : t("assets.renameFailed"));
+        } finally {
+            setBusy(false);
+        }
+    }, [ask, edit, load, message, t]);
+
     return (
         <main className="h-full overflow-auto bg-background text-stone-950 dark:text-stone-100">
             <div className="mx-auto w-full max-w-6xl px-6 py-10">
@@ -360,8 +496,14 @@ export default function AssetsPage() {
                 </div>
 
                 {selected.size > 0 ? (
-                    <div className="mt-4 flex items-center gap-3 rounded-lg bg-stone-100 px-4 py-2 text-sm dark:bg-stone-900">
+                    <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg bg-stone-100 px-4 py-2 text-sm dark:bg-stone-900">
                         <span>{t("assets.selectedCount", { count: selected.size })}</span>
+                        <Button size="small" icon={<FolderInput className="size-3.5" />} disabled={busy || !writable} title={writable ? undefined : t("assets.readOnly")} onClick={() => void moveSelected()}>
+                            {t("assets.move")}
+                        </Button>
+                        <Button size="small" danger icon={<Trash2 className="size-3.5" />} disabled={busy || !writable} title={writable ? undefined : t("assets.readOnly")} onClick={() => void removeSelected()}>
+                            {t("assets.remove")}
+                        </Button>
                         <Button size="small" onClick={() => setSelected(new Set<string>())}>{t("assets.clearSelection")}</Button>
                     </div>
                 ) : null}
@@ -445,7 +587,7 @@ export default function AssetsPage() {
                 className="hidden"
                 onChange={(event) => void importZip(event.target.files?.[0])}
             />
-            <AssetPreview file={preview} onClose={() => setPreview(null)} />
+            <AssetPreview file={preview} writable={writable} onRename={renameAsset} onClose={() => setPreview(null)} />
         </main>
     );
 }
@@ -491,22 +633,107 @@ function AssetCard({ file, selected, onToggle, onPreview }: {
     );
 }
 
+/** One labelled fact in the detail list. */
+function Fact({ label, children }: { label: string; children: ReactNode }) {
+    return (
+        <div className="flex gap-3">
+            <span className="w-20 shrink-0 text-stone-500">{label}</span>
+            <span className="min-w-0 break-all">{children}</span>
+        </div>
+    );
+}
+
+/**
+ * What the tree knows about one asset: where it sits, what landed it, and the
+ * cost rows its name points at.
+ *
+ * The index and the ledger are read on open rather than with the library: they
+ * are bookkeeping files, the library does not list them, and a page that fetched
+ * them for every asset would read the same two files hundreds of times.
+ */
+function AssetDetail({ file }: { file: AssetFile }) {
+    const { t } = useTranslation();
+    const [detail, setDetail] = useState<{ row: IndexRow | undefined; cost: { count: number; cost: number } } | null>(null);
+
+    useEffect(() => {
+        let live = true;
+        setDetail(null);
+        void (async () => {
+            const [index, ledger] = await Promise.all([
+                readText(file.root, `${file.project}/assets-index.md`),
+                readText(file.root, `${file.project}/media-cost.jsonl`),
+            ]);
+            if (!live) return;
+            setDetail({ row: indexedRow(index, file.name), cost: relatedCost(ledger, file.name.replace(/\.[^.]+$/, "")) });
+        })();
+        return () => { live = false; };
+    }, [file]);
+
+    return (
+        <div className="mt-4 space-y-2 border-t border-stone-200 pt-4 text-sm dark:border-stone-800">
+            <Fact label={t("assets.detailPath")}>{file.path}</Fact>
+            <Fact label={t("assets.detailSize")}>{formatBytes(file.size)}</Fact>
+            <Fact label={t("assets.detailModified")}>{new Date(file.mtime).toLocaleString()}</Fact>
+            <Fact label={t("assets.detailSource")}>
+                {detail === null ? "…" : detail.row === undefined ? (
+                    <span className="text-stone-500">{t("assets.detailSourceNone")}</span>
+                ) : (
+                    <>
+                        {detail.row.category}
+                        {detail.row.at === "" ? "" : ` · ${detail.row.at}`}
+                    </>
+                )}
+            </Fact>
+            <Fact label={t("assets.detailOrigin")}>
+                {detail?.row?.url === undefined || detail.row.url === "" ? (
+                    <span className="text-stone-500">{t("assets.detailOriginNone")}</span>
+                ) : (
+                    <a className="underline" href={detail.row.url} target="_blank" rel="noopener noreferrer">{detail.row.url}</a>
+                )}
+            </Fact>
+            <Fact label={t("assets.detailCost")}>
+                {detail === null ? "…" : detail.cost.count === 0 ? (
+                    <span className="text-stone-500">{t("assets.detailCostNone")}</span>
+                ) : (
+                    t("assets.detailCostValue", { count: detail.cost.count, cost: detail.cost.cost.toFixed(4) })
+                )}
+            </Fact>
+        </div>
+    );
+}
+
 /** The preview dialog: the asset at its own scale, straight from the file route. */
-function AssetPreview({ file, onClose }: { file: AssetFile | null; onClose: () => void }) {
+function AssetPreview({ file, writable, onRename, onClose }: {
+    file: AssetFile | null;
+    writable: boolean;
+    onRename: (file: AssetFile) => void;
+    onClose: () => void;
+}) {
     const { t } = useTranslation();
     return (
-        <Modal open={file !== null} onCancel={onClose} footer={null} width={880} centered title={file?.name}>
-            {file === null ? null : file.kind === "image" ? (
-                <img src={fileUrl(file.root, file.path)} alt={file.name} className="max-h-[75vh] w-full object-contain" />
-            ) : file.kind === "video" ? (
-                <video src={fileUrl(file.root, file.path)} controls autoPlay className="max-h-[75vh] w-full" />
-            ) : file.kind === "audio" ? (
-                <audio src={fileUrl(file.root, file.path)} controls className="w-full" />
-            ) : (
-                <div className="space-y-3 text-sm text-stone-500">
-                    <p>{file.path}</p>
-                    <a className="underline" href={fileUrl(file.root, file.path)} target="_blank" rel="noopener noreferrer">{t("assets.openRaw")}</a>
-                </div>
+        <Modal
+            open={file !== null}
+            onCancel={onClose}
+            footer={file !== null && writable ? (
+                <Button icon={<Pencil className="size-4" />} onClick={() => onRename(file)}>{t("assets.rename")}</Button>
+            ) : null}
+            width={880}
+            centered
+            title={file?.name}
+        >
+            {file === null ? null : (
+                <>
+                    {file.kind === "image" ? (
+                        <img src={fileUrl(file.root, file.path)} alt={file.name} className="max-h-[65vh] w-full object-contain" />
+                    ) : file.kind === "video" ? (
+                        <video src={fileUrl(file.root, file.path)} controls autoPlay className="max-h-[65vh] w-full" />
+                    ) : file.kind === "audio" ? (
+                        <audio src={fileUrl(file.root, file.path)} controls className="w-full" />
+                    ) : (
+                        <a className="text-sm underline" href={fileUrl(file.root, file.path)} target="_blank" rel="noopener noreferrer">{t("assets.openRaw")}</a>
+                    )}
+                    <AssetDetail file={file} />
+                </>
             )}
         </Modal>
     );
