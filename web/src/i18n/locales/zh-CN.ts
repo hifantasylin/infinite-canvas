@@ -73,7 +73,7 @@ export default {
         end: "已经到底了",
     },
     assets: {
-        title: "我的资产",
+        title: "资产库",
         description: "收藏常用文本和图片，按类型、标题和标签快速查找。",
         search: "搜索标题、内容、标签或来源",
         type: "类型",
@@ -328,7 +328,7 @@ export default {
         image: "生图工作台",
         video: "视频创作台",
         prompts: "提示词库",
-        assets: "我的资产",
+        assets: "资产库",
         config: "配置",
     },
     topNav: {

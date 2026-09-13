@@ -41,17 +41,16 @@ export function AppTopNav() {
                         <div className="flex min-w-0 items-center">
                             {/* Roubaai fork: the brand row links to the project
                                 library, which is this app's entry — the upstream
-                                home page is gone. The mark's URL is built from
-                                the build's base path: a root-absolute `/logo.svg`
-                                resolved against the origin, so under `/canvas/`
-                                it fetched nothing and the mark stayed invisible. */}
+                                home page is gone. The mark is RoubaAI's own, and
+                                its URL is built from the build's base path: a
+                                root-absolute path resolved against the origin, so
+                                under `/canvas/` it fetched nothing and the mark
+                                stayed invisible. */}
                             <Link to="/canvas" className="flex h-full shrink-0 items-center gap-2 text-sm font-semibold leading-none tracking-tight text-stone-950 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
-                                <span
-                                    className="size-5 shrink-0 bg-current"
-                                    style={{
-                                        mask: `url(${import.meta.env.BASE_URL}logo.svg) center / contain no-repeat`,
-                                        WebkitMask: `url(${import.meta.env.BASE_URL}logo.svg) center / contain no-repeat`,
-                                    }}
+                                <img
+                                    src={`${import.meta.env.BASE_URL}logo.png`}
+                                    alt=""
+                                    className="size-6 shrink-0 rounded-md"
                                 />
                                 <span className="text-base font-medium">{t("meta.title")}</span>
                             </Link>

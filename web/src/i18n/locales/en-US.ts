@@ -73,7 +73,7 @@ export default {
         end: "You've reached the end",
     },
     assets: {
-        title: "My Assets",
+        title: "Asset Library",
         description: "Save frequently used text and images, then find them quickly by type, title, or tag.",
         search: "Search titles, content, tags, or sources",
         type: "Type",
@@ -328,7 +328,7 @@ export default {
         image: "Image Studio",
         video: "Video Studio",
         prompts: "Prompt Library",
-        assets: "My Assets",
+        assets: "Asset Library",
         config: "Settings",
     },
     topNav: {
