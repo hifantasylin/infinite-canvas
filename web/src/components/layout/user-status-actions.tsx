@@ -62,7 +62,10 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                 </button>
             </Tooltip>
             <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} title={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} />
-            <VersionReleaseModal style={versionStyle} />
+            {/* Roubaai fork: the upstream version badge opens a release-notes
+                dialog for a product this canvas is not. A hosted canvas is a
+                surface of its host, so neither the badge nor the dialog is shown. */}
+            {hosted ? null : <VersionReleaseModal style={versionStyle} />}
             {hosted ? null : (
                 <GitHubLink className={cn("bg-transparent hover:bg-transparent dark:hover:bg-transparent", gitHubClassName)} style={gitHubStyle} />
             )}

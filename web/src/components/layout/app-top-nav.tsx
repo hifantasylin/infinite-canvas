@@ -39,12 +39,18 @@ export function AppTopNav() {
                 <header className="sticky top-0 z-20 h-14 shrink-0 border-b border-stone-200 bg-background/90 backdrop-blur-xl dark:border-stone-800">
                     <div className="mx-auto flex h-full max-w-7xl items-stretch justify-between gap-5 px-6">
                         <div className="flex min-w-0 items-center">
-                            <Link to="/" className="flex h-full shrink-0 items-center gap-2 text-sm font-semibold leading-none tracking-tight text-stone-950 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
+                            {/* Roubaai fork: the brand row links to the project
+                                library, which is this app's entry — the upstream
+                                home page is gone. The mark's URL is built from
+                                the build's base path: a root-absolute `/logo.svg`
+                                resolved against the origin, so under `/canvas/`
+                                it fetched nothing and the mark stayed invisible. */}
+                            <Link to="/canvas" className="flex h-full shrink-0 items-center gap-2 text-sm font-semibold leading-none tracking-tight text-stone-950 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
                                 <span
                                     className="size-5 shrink-0 bg-current"
                                     style={{
-                                        mask: "url(/logo.svg) center / contain no-repeat",
-                                        WebkitMask: "url(/logo.svg) center / contain no-repeat",
+                                        mask: `url(${import.meta.env.BASE_URL}logo.svg) center / contain no-repeat`,
+                                        WebkitMask: `url(${import.meta.env.BASE_URL}logo.svg) center / contain no-repeat`,
                                     }}
                                 />
                                 <span className="text-base font-medium">{t("meta.title")}</span>

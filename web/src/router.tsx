@@ -1,15 +1,12 @@
-import { createBrowserRouter, Outlet } from "react-router-dom";
+import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 
 import { AnalyticsTracker } from "@/components/layout/analytics-tracker";
 import UserLayout from "@/layouts/user-layout";
 import AssetsPage from "@/pages/assets";
 import CanvasPage from "@/pages/canvas";
 import CanvasProjectPage from "@/pages/canvas/project";
-import ConfigPage from "@/pages/config";
-import HomePage from "@/pages/home";
 import ImagePage from "@/pages/image";
 import NotFound from "@/pages/not-found";
-import PromptsPage from "@/pages/prompts";
 import VideoPage from "@/pages/video";
 
 // Roubaai fork: honour the build's base path. Vite rewrites asset URLs for a
@@ -28,14 +25,19 @@ export const router = createBrowserRouter(
                 </UserLayout>
             ),
             children: [
-                { path: "/", element: <HomePage /> },
+                // Roubaai fork: this canvas is one surface of its host, not a
+                // standalone product. The upstream home page (a landing page for
+                // the app itself) and its prompt library and settings pages are
+                // gone; the project library is the entry, and settings live in
+                // the top bar's dialog. `/assets` keeps its route because the
+                // canvas' asset picker reads the same store, but it has no nav
+                // row of its own.
+                { path: "/", element: <Navigate to="/canvas" replace /> },
                 { path: "/image", element: <ImagePage /> },
                 { path: "/video", element: <VideoPage /> },
                 { path: "/assets", element: <AssetsPage /> },
-                { path: "/prompts", element: <PromptsPage /> },
                 { path: "/canvas", element: <CanvasPage /> },
                 { path: "/canvas/:id", element: <CanvasProjectPage /> },
-                { path: "/config", element: <ConfigPage /> },
             ],
         },
         { path: "*", element: <NotFound /> },

@@ -1,7 +1,7 @@
 export default {
     meta: {
-        title: "Infinite Canvas",
-        description: "An infinite canvas creation tool",
+        title: "RoubaAI Canvas",
+        description: "RoubaAI's asset canvas and video workbench",
     },
     theme: { toggle: "Toggle theme" },
     common: {
@@ -215,9 +215,9 @@ export default {
         empty: "No video generated yet",
     },
     canvas: {
-        defaultTitle: "Infinite Canvas {{count}}",
-        library: "Canvas library",
-        title: "Infinite Canvas",
+        defaultTitle: "Untitled canvas {{count}}",
+        library: "RoubaAI canvas library",
+        title: "Canvas",
         imported: "Imported {{count}} canvases",
         importFailed: "Import failed. Select a valid canvas package.",
         opening: "Opening canvas...",
@@ -373,7 +373,7 @@ export default {
         title: "Settings & Preferences",
         invalidFile: "The settings file format is invalid",
         description: "Providers, model selection, sync, and local storage",
-        modalDescription: "Providers, default models, sync, and local storage",
+        modalDescription: "Providers, default models, and local storage",
         tabs: {
             channels: "Providers",
             localProxy: "Local proxy",

@@ -14,7 +14,7 @@ import { exportAppConfig, importAppConfig } from "@/services/config-file";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
-import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, roubaHostConfig, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -65,6 +65,11 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
     const webdavReady = Boolean(webdav.url.trim());
+    // Roubaai fork: a hosted canvas is configured by its host. The host row is
+    // the only channel, its endpoint and key live in the host's own settings,
+    // and the proxy / prompt-source / WebDAV surfaces belong to a deployment
+    // that keeps its own data — so they are not offered here at all.
+    const hosted = roubaHostConfig() !== null;
     const editingChannel = config.channels.find((channel) => channel.id === editingChannelId) || null;
     const locale = i18n.resolvedLanguage as AppLocale;
     useEffect(() => setActiveTab(initialTab), [initialTab]);
@@ -164,18 +169,25 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
 
     return (
         <>
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 pb-3 dark:border-stone-800">
-                <div className="text-xs text-stone-500">{t("config.fileSecurity")}</div>
-                <div className="flex gap-2">
-                    <Button icon={<Upload className="size-4" />} onClick={() => configInputRef.current?.click()}>
-                        {t("config.import")}
-                    </Button>
-                    <Button icon={<Download className="size-4" />} onClick={exportAppConfig}>
-                        {t("config.export")}
-                    </Button>
-                    <input ref={configInputRef} type="file" accept="application/json,.json" className="hidden" onChange={(event) => event.target.files?.[0] && void loadConfigFile(event.target.files[0])} />
+            {/* Roubaai fork: the config file is a carrier for channels, keys and
+                WebDAV credentials of a standalone deployment. A hosted canvas
+                has none of those — its one channel is the host, whose key never
+                reaches the browser — so neither the warning nor the buttons are
+                shown. */}
+            {hosted ? null : (
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 pb-3 dark:border-stone-800">
+                    <div className="text-xs text-stone-500">{t("config.fileSecurity")}</div>
+                    <div className="flex gap-2">
+                        <Button icon={<Upload className="size-4" />} onClick={() => configInputRef.current?.click()}>
+                            {t("config.import")}
+                        </Button>
+                        <Button icon={<Download className="size-4" />} onClick={exportAppConfig}>
+                            {t("config.export")}
+                        </Button>
+                        <input ref={configInputRef} type="file" accept="application/json,.json" className="hidden" onChange={(event) => event.target.files?.[0] && void loadConfigFile(event.target.files[0])} />
+                    </div>
                 </div>
-            </div>
+            )}
             <Tabs
                 activeKey={activeTab}
                 onChange={(key) => setActiveTab(key as ConfigTabKey)}
@@ -187,9 +199,11 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                             <div>
                                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                                     <div className="text-xs text-stone-500">{t("config.channels.description")}</div>
-                                    <Button type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>
-                                        {t("config.channels.add")}
-                                    </Button>
+                                    {hosted ? null : (
+                                        <Button type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>
+                                            {t("config.channels.add")}
+                                        </Button>
+                                    )}
                                 </div>
                                 <div className="space-y-2">
                                     {config.channels.map((channel) => (
@@ -200,23 +214,29 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                                     {apiFormatLabel(channel.apiFormat)} · {t("config.channels.modelCount", { count: channel.models.length })} · {channel.baseUrl || t("config.channels.missingUrl")}
                                                 </div>
                                             </div>
-                                            <div className="flex shrink-0 gap-2">
-                                                <Button size="small" icon={<Pencil className="size-3.5" />} onClick={() => setEditingChannelId(channel.id)}>
-                                                    {t("common.edit")}
-                                                </Button>
-                                                <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => deleteChannel(channel.id)} />
-                                            </div>
+                                            {/* Roubaai fork: the host row's endpoint, key and
+                                                models are the host's settings, and every write
+                                                here is replaced by the host's catalogue on the
+                                                next load — so the row is shown, not edited. */}
+                                            {hosted ? null : (
+                                                <div className="flex shrink-0 gap-2">
+                                                    <Button size="small" icon={<Pencil className="size-3.5" />} onClick={() => setEditingChannelId(channel.id)}>
+                                                        {t("common.edit")}
+                                                    </Button>
+                                                    <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => deleteChannel(channel.id)} />
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
                             </div>
                         ),
                     },
-                    {
+                    ...(hosted ? [] : [{
                         key: "local-proxy",
                         label: t("config.tabs.localProxy"),
                         children: <ConfigLocalProxy />,
-                    },
+                    }]),
                     {
                         key: "preferences",
                         label: t("config.tabs.preferences"),
@@ -263,18 +283,23 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                 <Form.Item label={t("config.preferences.audioInstructions")} className="mb-4">
                                     <Input.TextArea rows={2} value={config.audioInstructions} placeholder={t("config.preferences.audioInstructionsPlaceholder")} onChange={(event) => updateConfig("audioInstructions", event.target.value)} />
                                 </Form.Item>
-                                <Form.Item label={t("config.preferences.systemPrompt")} className="mb-0">
-                                    <Input.TextArea rows={4} value={config.systemPrompt} placeholder={t("config.preferences.systemPromptPlaceholder")} onChange={(event) => updateConfig("systemPrompt", event.target.value)} />
-                                </Form.Item>
+                                {/* Roubaai fork: the system prompt configures the standalone
+                                    app's local agent. A hosted canvas is driven by its host,
+                                    so there is no agent for this text to reach. */}
+                                {hosted ? null : (
+                                    <Form.Item label={t("config.preferences.systemPrompt")} className="mb-0">
+                                        <Input.TextArea rows={4} value={config.systemPrompt} placeholder={t("config.preferences.systemPromptPlaceholder")} onChange={(event) => updateConfig("systemPrompt", event.target.value)} />
+                                    </Form.Item>
+                                )}
                             </Form>
                         ),
                     },
-                    {
+                    ...(hosted ? [] : [{
                         key: "prompt-sources",
                         label: t("config.tabs.promptSources"),
                         children: <ConfigPromptSources />,
-                    },
-                    {
+                    }]),
+                    ...(hosted ? [] : [{
                         key: "webdav",
                         label: "WebDAV",
                         children: (
@@ -317,7 +342,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                 </section>
                             </Form>
                         ),
-                    },
+                    }]),
                     {
                         key: "local-storage",
                         label: t("config.tabs.localStorage"),

@@ -1,7 +1,7 @@
 export default {
     meta: {
-        title: "无限画布",
-        description: "一个无限画布创作工具",
+        title: "RoubaAI 画布",
+        description: "RoubaAI 的资产画布与视频工作台",
     },
     theme: { toggle: "切换主题" },
     common: {
@@ -215,9 +215,9 @@ export default {
         empty: "还没有生成视频",
     },
     canvas: {
-        defaultTitle: "无限画布 {{count}}",
-        library: "画布库",
-        title: "无限画布",
+        defaultTitle: "未命名画布 {{count}}",
+        library: "RoubaAI 画布库",
+        title: "画布",
         imported: "已导入 {{count}} 个画布",
         importFailed: "导入失败，请选择有效的画布压缩包",
         opening: "正在打开画布...",
@@ -373,7 +373,7 @@ export default {
         title: "配置与用户偏好",
         invalidFile: "配置文件格式不正确",
         description: "渠道聚合、模型选择、同步与本地存储",
-        modalDescription: "渠道聚合、默认模型、同步与本地存储",
+        modalDescription: "渠道、默认模型与本地存储",
         tabs: {
             channels: "渠道",
             localProxy: "本地代理",

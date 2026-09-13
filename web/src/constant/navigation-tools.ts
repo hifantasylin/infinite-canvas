@@ -1,5 +1,11 @@
-import { FileText, ImagePlus, Images, Maximize2, Settings2, Video } from "lucide-react";
+import { ImagePlus, Maximize2, Video } from "lucide-react";
 
+/**
+ * Roubaai fork: the top bar's tool rows. The upstream list also carried the
+ * prompt library and the settings page — the first is reachable inside a canvas
+ * (its side panel reads the same sources) and the second duplicates the top
+ * bar's settings dialog, so neither earns a row.
+ */
 export const navigationTools = [
     {
         slug: "canvas",
@@ -12,18 +18,6 @@ export const navigationTools = [
     {
         slug: "video",
         icon: Video,
-    },
-    {
-        slug: "prompts",
-        icon: FileText,
-    },
-    {
-        slug: "assets",
-        icon: Images,
-    },
-    {
-        slug: "config",
-        icon: Settings2,
     },
 ] as const;
 
