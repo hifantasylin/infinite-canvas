@@ -8,9 +8,12 @@ import { RouterProvider } from "react-router-dom";
 import { AppProviders } from "@/components/layout/app-providers";
 import "@/i18n";
 import { initAnalytics } from "@/lib/analytics";
+import { installHostSessionHeader } from "@/lib/roubaai-host";
 import { router } from "@/router";
 
 initAnalytics();
+// Every same-origin call carries the session this canvas was opened for.
+installHostSessionHeader();
 
 document.body.style.fontFamily = '"SF Pro Display","SF Pro Text","PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif';
 

@@ -3,6 +3,8 @@ import { Tooltip } from "antd";
 import { BookOpen, Keyboard, Puzzle, RefreshCw, Settings2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { withHostSession } from "@/lib/roubaai-host";
+
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { GitHubLink } from "@/components/layout/github-link";
 import { VersionReleaseModal } from "@/components/layout/version-release-modal";
@@ -28,10 +30,12 @@ type UserStatusActionsProps = {
  * reopening that panel was the only way to pick up a rebuilt frontend or a
  * changed asset tree. The timestamp makes the document a URL the browser has not
  * seen, and with it the hashed bundle the document names; replacing rather than
- * pushing keeps the marker out of history.
+ * pushing keeps the marker out of history. The session marker is re-applied
+ * because in-app navigation drops it from the address bar, and a reload without
+ * it would show the shared library instead of this workspace's assets.
  */
 export function reloadCanvas(): void {
-    const url = new URL(window.location.href);
+    const url = new URL(withHostSession(`${window.location.pathname}${window.location.search}`), window.location.origin);
     url.searchParams.set("_r", String(Date.now()));
     window.location.replace(url.toString());
 }

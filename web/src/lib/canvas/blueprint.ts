@@ -1,4 +1,5 @@
 import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
+import { withHostSession } from "@/lib/roubaai-host";
 
 /**
  * Roubaai fork: read a production blueprint and turn it into canvas ops.
@@ -100,7 +101,7 @@ export function blueprintOps(blueprint: Blueprint, origin = { x: 0, y: 0 }): Can
  */
 export async function fetchBlueprint(project: string): Promise<Blueprint | null> {
     try {
-        const response = await fetch(blueprintUrl(project));
+        const response = await fetch(withHostSession(blueprintUrl(project)));
         if (!response.ok) return null;
         return (await response.json()) as Blueprint;
     } catch {
@@ -121,7 +122,7 @@ export type BlueprintEntry = { project: string; mtime: number; bytes: number };
  */
 export async function newestBlueprint(): Promise<BlueprintEntry | null> {
     try {
-        const response = await fetch(ASSET_BLUEPRINTS_ROUTE);
+        const response = await fetch(withHostSession(ASSET_BLUEPRINTS_ROUTE));
         if (!response.ok) return null;
         const payload = (await response.json()) as { blueprints?: BlueprintEntry[] };
         return payload.blueprints?.[0] ?? null;

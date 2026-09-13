@@ -5,6 +5,7 @@ import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
 import { createZip, readZip } from "@/lib/zip";
+import { withHostSession } from "@/lib/roubaai-host";
 import { formatBytes } from "@/lib/image-utils";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ const ROUTE = "/api/roubaai-assets";
 type Kind = "image" | "video" | "audio" | "other";
 
 type AssetFile = {
+    root: string;
     path: string;
     name: string;
     project: string;
@@ -35,6 +37,7 @@ type AssetFile = {
 };
 
 type AssetProject = {
+    root: string;
     name: string;
     files: number;
     bytes: number;
@@ -42,8 +45,15 @@ type AssetProject = {
     cover?: string;
 };
 
+/** One tree the host serves: the session's workspace, or a mounted library. */
+type AssetRoot = {
+    id: string;
+    writable: boolean;
+};
+
 type LibraryAnswer = {
     ok?: boolean;
+    roots?: AssetRoot[];
     projects?: AssetProject[];
     files?: AssetFile[];
     error?: string;
@@ -56,9 +66,9 @@ const TYPE_FILTERS: Array<Kind | "all"> = ["all", ...KIND_ORDER];
 
 const KIND_ICON = { image: ImageIcon, video: Film, audio: Music, other: FileText } as const;
 
-/** The same-origin URL that serves one asset's bytes. */
-function fileUrl(path: string): string {
-    return `${ROUTE}/file?path=${encodeURIComponent(path)}`;
+/** The same-origin URL that serves one asset's bytes, from the tree it lives in. */
+function fileUrl(root: string, path: string): string {
+    return withHostSession(`${ROUTE}/file?root=${encodeURIComponent(root)}&path=${encodeURIComponent(path)}`);
 }
 
 export default function AssetsPage() {
@@ -68,6 +78,10 @@ export default function AssetsPage() {
     const [busy, setBusy] = useState(false);
     const [files, setFiles] = useState<AssetFile[]>([]);
     const [projects, setProjects] = useState<AssetProject[]>([]);
+    const [roots, setRoots] = useState<AssetRoot[]>([]);
+    // Which tree is being browsed. The writable one — the session's workspace —
+    // comes first, so that is what the page opens on.
+    const [rootId, setRootId] = useState("");
     const [project, setProject] = useState("all");
     const [kind, setKind] = useState<Kind | "all">("all");
     const [query, setQuery] = useState("");
@@ -80,7 +94,7 @@ export default function AssetsPage() {
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const response = await fetch(`${ROUTE}/library`);
+            const response = await fetch(withHostSession(`${ROUTE}/library`));
             // Read as text first: a host without this route answers plain text
             // (the static fallback's `not found`), and `response.json()` would
             // surface that as a JSON parse error naming nothing useful.
@@ -96,6 +110,11 @@ export default function AssetsPage() {
             }
             setProjects(body.projects ?? []);
             setFiles(body.files ?? []);
+            const nextRoots = body.roots ?? [];
+            setRoots(nextRoots);
+            // Keep the current scope when it still exists; otherwise fall back to
+            // the writable tree the host listed first.
+            setRootId(current => nextRoots.some(root => root.id === current) ? current : nextRoots[0]?.id ?? "");
         } catch (error) {
             message.error(error instanceof Error ? error.message : t("assets.loadFailed"));
         } finally {
@@ -107,15 +126,22 @@ export default function AssetsPage() {
         void load();
     }, [load]);
 
+    const scope = roots.find(root => root.id === rootId);
+    const writable = scope?.writable === true;
+
     const visible = useMemo(() => {
         const needle = query.trim().toLowerCase();
         return files.filter((file) => {
+            if (file.root !== rootId) return false;
             if (project !== "all" && file.project !== project) return false;
             if (kind !== "all" && file.kind !== kind) return false;
             if (needle === "") return true;
             return `${file.name} ${file.project} ${file.group}`.toLowerCase().includes(needle);
         });
-    }, [files, kind, project, query]);
+    }, [files, kind, project, query, rootId]);
+
+    /** The projects of the browsed tree, which is what its cards and select show. */
+    const scopedProjects = useMemo(() => projects.filter(item => item.root === rootId), [projects, rootId]);
 
     const groups = useMemo(() => {
         const byGroup = new Map<string, AssetFile[]>();
@@ -132,20 +158,23 @@ export default function AssetsPage() {
     // user is looking at everything and has not narrowed by a search.
     const showsProjects = project === "all" && query.trim() === "";
 
-    const toggle = useCallback((path: string) => {
+    const toggle = useCallback((key: string) => {
         setSelected((current) => {
             const next = new Set(current);
-            if (next.has(path)) next.delete(path);
-            else next.add(path);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
             return next;
         });
     }, []);
+
+    /** The key one file is selected by: its tree plus its path. */
+    const fileKey = (file: AssetFile): string => `${file.root}:${file.path}`;
 
     /** Where an upload goes: the selected project, or one the user names. */
     const pickProject = useCallback((): Promise<string | undefined> => {
         if (project !== "all") return Promise.resolve(project);
         return new Promise((resolve) => {
-            let value = projects[0]?.name ?? "default";
+            let value = scopedProjects[0]?.name ?? "default";
             modal.confirm({
                 title: t("assets.chooseProject"),
                 content: <Input defaultValue={value} onChange={(event) => { value = event.target.value; }} />,
@@ -155,7 +184,7 @@ export default function AssetsPage() {
                 onCancel: () => { resolve(undefined); },
             });
         });
-    }, [modal, project, projects, t]);
+    }, [modal, project, scopedProjects, t]);
 
     const upload = useCallback(async (target: string, list: readonly File[]): Promise<number> => {
         const form = new FormData();
@@ -165,7 +194,7 @@ export default function AssetsPage() {
         const body = (await response.json()) as { ok?: boolean; error?: string; saved?: unknown[] };
         if (!response.ok || body.ok !== true) throw new Error(body.error ?? `HTTP ${response.status}`);
         return body.saved?.length ?? 0;
-    }, []);
+    }, [rootId]);
 
     const addFiles = useCallback(async (list: File[]) => {
         if (list.length === 0) return;
@@ -212,12 +241,12 @@ export default function AssetsPage() {
     }, [load, message, pickProject, t, upload]);
 
     const exportSelected = useCallback(async () => {
-        const chosen = files.filter((file) => selected.has(file.path));
+        const chosen = files.filter((file) => selected.has(fileKey(file)));
         if (chosen.length === 0) return;
         setBusy(true);
         try {
             const entries = await Promise.all(chosen.map(async (file) => {
-                const response = await fetch(fileUrl(file.path));
+                const response = await fetch(fileUrl(file.root, file.path));
                 if (!response.ok) throw new Error(`${file.name}: HTTP ${response.status}`);
                 const relative = file.path.slice(file.project.length + 1);
                 return { name: `${file.project}/${relative}`, data: await response.blob() };
@@ -253,13 +282,39 @@ export default function AssetsPage() {
                 </div>
 
                 <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-stone-200 pb-3 dark:border-stone-800">
+                    {/* Which tree is being browsed. The session's workspace is
+                        this project's own assets; the mounted library is the
+                        cross-project store, and it is read-only. */}
+                    <div className="flex items-center gap-2 text-sm">
+                        <span className="text-stone-500">{t("assets.scope")}</span>
+                        <div className="flex flex-wrap items-center gap-1">
+                            {roots.map((root) => (
+                                <button
+                                    key={root.id}
+                                    type="button"
+                                    onClick={() => { setRootId(root.id); setProject("all"); }}
+                                    className={cn(
+                                        "rounded-full px-3 py-1 text-sm transition",
+                                        rootId === root.id
+                                            ? "bg-stone-950 font-medium dark:bg-stone-100"
+                                            : "hover:bg-stone-100 dark:hover:bg-stone-800",
+                                    )}
+                                >
+                                    <span className={rootId === root.id ? "text-white dark:text-stone-950" : "text-stone-600 dark:text-stone-300"}>
+                                        {t(root.id === "workspace" ? "assets.scopeWorkspace" : "assets.scopeGlobal")}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
                     <label className="flex items-center gap-2 text-sm">
                         <span className="text-stone-500">{t("assets.project")}</span>
                         <Select
                             value={project}
                             onChange={setProject}
                             className="min-w-40"
-                            options={[{ value: "all", label: t("assets.projectAll") }, ...projects.map((item) => ({ value: item.name, label: item.name }))]}
+                            options={[{ value: "all", label: t("assets.projectAll") }, ...scopedProjects.map((item) => ({ value: item.name, label: item.name }))]}
                         />
                     </label>
 
@@ -295,10 +350,10 @@ export default function AssetsPage() {
                         <Button icon={<Download className="size-4" />} disabled={busy || selected.size === 0} onClick={() => void exportSelected()}>
                             {t("assets.export")}
                         </Button>
-                        <Button icon={<Upload className="size-4" />} disabled={busy} onClick={() => importInputRef.current?.click()}>
+                        <Button icon={<Upload className="size-4" />} disabled={busy || !writable} title={writable ? undefined : t("assets.readOnly")} onClick={() => importInputRef.current?.click()}>
                             {t("assets.import")}
                         </Button>
-                        <Button type="primary" icon={<Plus className="size-4" />} disabled={busy} onClick={() => uploadInputRef.current?.click()}>
+                        <Button type="primary" icon={<Plus className="size-4" />} disabled={busy || !writable} title={writable ? undefined : t("assets.readOnly")} onClick={() => uploadInputRef.current?.click()}>
                             {t("assets.add")}
                         </Button>
                     </div>
@@ -314,7 +369,7 @@ export default function AssetsPage() {
                 {loading ? (
                     <div className="grid min-h-[320px] place-items-center"><Spin /></div>
                 ) : showsProjects ? (
-                    projects.length === 0 ? (
+                    scopedProjects.length === 0 ? (
                         <section className="grid min-h-[320px] place-items-center text-center">
                             <div>
                                 <h2 className="text-lg font-medium">{t("assets.emptyLibrary")}</h2>
@@ -323,16 +378,16 @@ export default function AssetsPage() {
                         </section>
                     ) : (
                         <div className="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-                            {projects.map((item) => (
+                            {scopedProjects.map((item) => (
                                 <button
-                                    key={item.name}
+                                    key={`${item.root}/${item.name}`}
                                     type="button"
                                     onClick={() => setProject(item.name)}
                                     className="overflow-hidden rounded-xl border border-stone-200 text-left transition hover:border-stone-400 dark:border-stone-800 dark:hover:border-stone-600"
                                 >
                                     <span className="block aspect-[4/3] w-full bg-stone-100 dark:bg-stone-900">
                                         {item.cover ? (
-                                            <img src={fileUrl(item.cover)} alt="" loading="lazy" className="size-full object-cover" />
+                                            <img src={fileUrl(item.root, item.cover)} alt="" loading="lazy" className="size-full object-cover" />
                                         ) : (
                                             <span className="grid size-full place-items-center text-stone-400"><ImageIcon className="size-8" /></span>
                                         )}
@@ -361,10 +416,10 @@ export default function AssetsPage() {
                                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
                                     {list.map((file) => (
                                         <AssetCard
-                                            key={file.path}
+                                            key={fileKey(file)}
                                             file={file}
-                                            selected={selected.has(file.path)}
-                                            onToggle={() => toggle(file.path)}
+                                            selected={selected.has(fileKey(file))}
+                                            onToggle={() => toggle(fileKey(file))}
                                             onPreview={() => setPreview(file)}
                                         />
                                     ))}
@@ -408,9 +463,9 @@ function AssetCard({ file, selected, onToggle, onPreview }: {
             <button type="button" onClick={onPreview} className="block w-full text-left">
                 <span className="block aspect-square w-full overflow-hidden rounded-lg border border-stone-200 bg-stone-100 dark:border-stone-800 dark:bg-stone-900">
                     {file.kind === "image" ? (
-                        <img src={fileUrl(file.path)} alt={file.name} loading="lazy" className="size-full object-cover" />
+                        <img src={fileUrl(file.root, file.path)} alt={file.name} loading="lazy" className="size-full object-cover" />
                     ) : file.kind === "video" ? (
-                        <video src={fileUrl(file.path)} muted preload="metadata" className="size-full object-cover" />
+                        <video src={fileUrl(file.root, file.path)} muted preload="metadata" className="size-full object-cover" />
                     ) : (
                         <span className="grid size-full place-items-center text-stone-400"><Icon className="size-7" /></span>
                     )}
@@ -442,15 +497,15 @@ function AssetPreview({ file, onClose }: { file: AssetFile | null; onClose: () =
     return (
         <Modal open={file !== null} onCancel={onClose} footer={null} width={880} centered title={file?.name}>
             {file === null ? null : file.kind === "image" ? (
-                <img src={fileUrl(file.path)} alt={file.name} className="max-h-[75vh] w-full object-contain" />
+                <img src={fileUrl(file.root, file.path)} alt={file.name} className="max-h-[75vh] w-full object-contain" />
             ) : file.kind === "video" ? (
-                <video src={fileUrl(file.path)} controls autoPlay className="max-h-[75vh] w-full" />
+                <video src={fileUrl(file.root, file.path)} controls autoPlay className="max-h-[75vh] w-full" />
             ) : file.kind === "audio" ? (
-                <audio src={fileUrl(file.path)} controls className="w-full" />
+                <audio src={fileUrl(file.root, file.path)} controls className="w-full" />
             ) : (
                 <div className="space-y-3 text-sm text-stone-500">
                     <p>{file.path}</p>
-                    <a className="underline" href={fileUrl(file.path)} target="_blank" rel="noopener noreferrer">{t("assets.openRaw")}</a>
+                    <a className="underline" href={fileUrl(file.root, file.path)} target="_blank" rel="noopener noreferrer">{t("assets.openRaw")}</a>
                 </div>
             )}
         </Modal>
