@@ -95,6 +95,7 @@ export default {
         importEmpty: "压缩包里没有文件",
         exportFailed: "导出失败",
         loadFailed: "资产列表加载失败",
+        routeMissing: "宿主还没有资产接口（这个宿主版本要重新打包）",
         openRaw: "直接打开文件",
         kind: { image: "图片", video: "视频", audio: "音频", other: "其他" },
         export: "导出资产",

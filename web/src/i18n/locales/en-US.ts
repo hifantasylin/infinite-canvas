@@ -95,6 +95,7 @@ export default {
         importEmpty: "The archive has no files",
         exportFailed: "Export failed",
         loadFailed: "The asset list could not be loaded",
+        routeMissing: "This host does not serve the asset API yet (its build needs repacking)",
         openRaw: "Open the file directly",
         kind: { image: "Images", video: "Videos", audio: "Audio", other: "Other" },
         export: "Export assets",

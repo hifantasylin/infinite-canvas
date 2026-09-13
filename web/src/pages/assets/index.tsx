@@ -81,8 +81,19 @@ export default function AssetsPage() {
         setLoading(true);
         try {
             const response = await fetch(`${ROUTE}/library`);
-            const body = (await response.json()) as LibraryAnswer;
-            if (!response.ok || body.ok !== true) throw new Error(body.error ?? `HTTP ${response.status}`);
+            // Read as text first: a host without this route answers plain text
+            // (the static fallback's `not found`), and `response.json()` would
+            // surface that as a JSON parse error naming nothing useful.
+            const raw = await response.text();
+            let body: LibraryAnswer = {};
+            try {
+                body = JSON.parse(raw) as LibraryAnswer;
+            } catch {
+                body = {};
+            }
+            if (!response.ok || body.ok !== true) {
+                throw new Error(body.error ?? (response.status === 404 ? t("assets.routeMissing") : `HTTP ${response.status}`));
+            }
             setProjects(body.projects ?? []);
             setFiles(body.files ?? []);
         } catch (error) {
@@ -263,11 +274,17 @@ export default function AssetsPage() {
                                     className={cn(
                                         "rounded-full px-3 py-1 text-sm transition",
                                         kind === value
-                                            ? "bg-stone-950 font-medium text-white dark:bg-stone-100 dark:text-stone-950"
-                                            : "text-stone-600 hover:bg-stone-100 dark:text-stone-300 dark:hover:bg-stone-800",
+                                            ? "bg-stone-950 font-medium dark:bg-stone-100"
+                                            : "hover:bg-stone-100 dark:hover:bg-stone-800",
                                     )}
                                 >
-                                    {value === "all" ? t("assets.typeAll") : t(`assets.kind.${value}`)}
+                                    {/* The colour rides a span: the form reset
+                                        (`input, button, … { color: inherit }`) is
+                                        unlayered, so it outranks every Tailwind
+                                        text utility on the button itself. */}
+                                    <span className={kind === value ? "text-white dark:text-stone-950" : "text-stone-600 dark:text-stone-300"}>
+                                        {value === "all" ? t("assets.typeAll") : t(`assets.kind.${value}`)}
+                                    </span>
                                 </button>
                             ))}
                         </div>
@@ -325,8 +342,7 @@ export default function AssetsPage() {
                                         <span className="mt-1 block text-xs text-stone-500">
                                             {t("assets.projectSummary", { count: item.files, size: formatBytes(item.bytes) })}
                                         </span>
-                                    </span>
-                                </button>
+                                    </span>                                </button>
                             ))}
                         </div>
                     )
@@ -409,11 +425,12 @@ function AssetCard({ file, selected, onToggle, onPreview }: {
                 className={cn(
                     "absolute left-2 top-2 grid size-5 place-items-center rounded border transition",
                     selected
-                        ? "border-stone-950 bg-stone-950 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-950"
-                        : "border-stone-300 bg-white/80 text-transparent opacity-0 group-hover:opacity-100 dark:border-stone-600 dark:bg-stone-900/80",
+                        ? "border-stone-950 bg-stone-950 dark:border-stone-100 dark:bg-stone-100"
+                        : "border-stone-300 bg-white/80 opacity-0 group-hover:opacity-100 dark:border-stone-600 dark:bg-stone-900/80",
                 )}
             >
-                <Check className="size-3.5" />
+                {/* Colour on the glyph, for the same reason as the type chips. */}
+                <Check className={cn("size-3.5", selected ? "text-white dark:text-stone-950" : "text-transparent")} />
             </button>
         </div>
     );
